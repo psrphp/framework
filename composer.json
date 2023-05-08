@@ -1,0 +1,27 @@
+{
+    "name": "psrphp/framework",
+    "description": "php开发框架",
+    "type": "library",
+    "license": "GPL-3.0",
+    "require": {
+        "psrphp/psr3": "^1.0",
+        "psrphp/psr11": "^1.0",
+        "psrphp/psr14": "^1.0",
+        "psrphp/psr15": "^1.0",
+        "psrphp/psr16": "^1.0",
+        "psrphp/psr17": "^1.0",
+        "psrphp/router": "^1.0",
+        "psrphp/responser": "^1.0",
+        "psrphp/database": "^1.0",
+        "psrphp/template": "^1.0",
+        "psrphp/session": "^1.0",
+        "psrphp/request": "^1.0",
+        "psrphp/form": "^1.0",
+        "psrphp/pagination": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "PsrPHP\\Framework\\": "src/"
+        }
+    }
+}
