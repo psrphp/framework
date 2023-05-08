@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\Autoload\ClassLoader;
 use Composer\InstalledVersions;
 use Exception;
 use PsrPHP\Database\Db;
@@ -52,18 +51,15 @@ class Framework
             die('composer 2 is required!');
         }
 
-        self::execute(function () {
-            $loader = new ClassLoader();
-            $project_dir = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-            foreach (self::getAppList() as $app) {
-                if ($app['plugin']) {
-                    $loader->addPsr4(
-                        str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app['name'] . '\\', '/\\-')),
-                        $project_dir . '/' . $app['name'] . '/src/library/'
-                    );
+        spl_autoload_register(function (string $class) {
+            $paths = explode('\\', $class);
+            if (isset($paths[3])  && $paths[0] == 'App' && $paths[1] == 'Plugin') {
+                $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+                $file = $root . '/plugin/' . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2]))) . '/src/library/' . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3)) . '.php';
+                if (file_exists($file)) {
+                    include $file;
                 }
             }
-            $loader->register();
         });
 
         self::hook('onInit');
@@ -193,9 +189,9 @@ class Framework
                 }
 
                 if ($theme = $config->get('theme.name', '')) {
-                    $project_dir = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+                    $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
                     foreach (self::getAppList() as $app) {
-                        $template->addPath($app['name'], $project_dir . '/theme/' . $theme . '/' . $app['name'], 99);
+                        $template->addPath($app['name'], $root . '/theme/' . $theme . '/' . $app['name'], 99);
                     }
                 }
 
@@ -227,9 +223,9 @@ class Framework
                     ];
                 }
 
-                $project_dir = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-                foreach (glob($project_dir . '/plugin/*/src/library/App.php') as $file) {
-                    $app = substr($file, strlen($project_dir . '/'), -strlen('/src/library/App.php'));
+                $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+                foreach (glob($root . '/plugin/*/src/library/App.php') as $file) {
+                    $app = substr($file, strlen($root . '/'), -strlen('/src/library/App.php'));
 
                     $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
                     if (
@@ -239,18 +235,18 @@ class Framework
                         continue;
                     }
 
-                    if (file_exists($project_dir . '/config/' . $app . '/disabled.lock')) {
+                    if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
                         continue;
                     }
 
-                    if (!file_exists($project_dir . '/config/' . $app . '/install.lock')) {
+                    if (!file_exists($root . '/config/' . $app . '/install.lock')) {
                         continue;
                     }
 
                     $list[$app] = [
                         'name' => $app,
                         'plugin' => true,
-                        'dir' => $project_dir . '/' . $app,
+                        'dir' => $root . '/' . $app,
                     ];
                 }
                 $cache->set('applist!system', $list, 86400);
