@@ -208,12 +208,17 @@ class Framework
         ): array {
             if (null == $list = $cache->get('applist!system')) {
                 $list = [];
+
+                $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
                 foreach (array_unique(InstalledVersions::getInstalledPackages()) as $app) {
                     $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
                     if (
                         !class_exists($class_name)
                         || !is_subclass_of($class_name, AppInterface::class)
                     ) {
+                        continue;
+                    }
+                    if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
                         continue;
                     }
                     $list[$app] = [
@@ -223,7 +228,6 @@ class Framework
                     ];
                 }
 
-                $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
                 foreach (glob($root . '/plugin/*/src/library/App.php') as $file) {
                     $app = substr($file, strlen($root . '/'), -strlen('/src/library/App.php'));
 
