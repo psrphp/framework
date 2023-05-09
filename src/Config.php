@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\InstalledVersions;
+use Composer\Autoload\ClassLoader;
 use Exception;
 use InvalidArgumentException;
 use ReflectionClass;
@@ -149,16 +149,16 @@ class Config
 
         $res['filename'] = array_shift($paths);
         $res['paths'] = $paths;
-        $project_dir = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+        $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
         if (!strlen($group)) {
-            $res['config_file'] = $project_dir . '/config/' . $res['filename'] . '.php';
+            $res['config_file'] = $root . '/config/' . $res['filename'] . '.php';
             $res['key'] = $res['filename'];
         } else {
             $group = str_replace('.', '/', $group);
             $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $group . '\\App', '/\\-'));
             $reflector = new ReflectionClass($class_name);
             $res['default_file'] = dirname(dirname($reflector->getFileName())) . '/config/' . $res['filename'] . '.php';
-            $res['config_file'] = $project_dir . '/config/' . $group . '/' . $res['filename'] . '.php';
+            $res['config_file'] = $root . '/config/' . $group . '/' . $res['filename'] . '.php';
             $res['key'] = $res['filename'] . '@' . $group;
         }
 
