@@ -4,22 +4,26 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\InstalledVersions;
+use Composer\Autoload\ClassLoader;
 use InvalidArgumentException;
 use PsrPHP\Template\Template;
 use ReflectionClass;
 
 class Widget
 {
+    private $template;
+
+    public function __construct(
+        Template $template
+    ) {
+        $this->template = $template;
+    }
+
     public function get(string $key): string
     {
         $widget_file = $this->parseKey($key);
         $string = file_exists($widget_file) ? file_get_contents($widget_file) : '';
-        return Framework::execute(function (
-            Template $template
-        ) use ($string): string {
-            return $template->renderFromString($string);
-        });
+        return $this->template->renderFromString($string);
     }
 
     private function parseKey(string $key): string
@@ -31,8 +35,8 @@ class Widget
         }
 
         if (!strlen($group)) {
-            $project_dir = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-            $widget_file = $project_dir . '/widget/' . $filename . '.php';
+            $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+            $widget_file = $root . '/widget/' . $filename . '.php';
         } else {
             $group = str_replace('.', '/', $group);
             $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $group . '\\App', '/\\-'));
