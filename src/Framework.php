@@ -29,7 +29,9 @@ use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
+use PsrPHP\Plugin\Plugin;
 use PsrPHP\Template\Template;
+use PsrPHP\Theme\Theme;
 use ReflectionClass;
 use ReflectionFunction;
 use ReflectionMethod;
@@ -84,8 +86,7 @@ class Framework
     public static function getAppList(): array
     {
         return self::execute(function (
-            CacheInterface $cache,
-            Plugin $plugin
+            CacheInterface $cache
         ): array {
             if (null == $list = $cache->get('applist!system')) {
                 $list = [];
@@ -106,7 +107,11 @@ class Framework
                         'dir' => dirname(dirname(dirname((new ReflectionClass($class_name))->getFileName()))),
                     ];
                 }
-                $list = array_merge($list, $plugin->getList());
+                if (class_exists(Plugin::class)) {
+                    self::execute(function (Plugin $plugin) use (&$list) {
+                        $plugin->run($list);
+                    });
+                }
                 $cache->set('applist!system', $list, 86400);
             }
             return $list;
@@ -165,18 +170,20 @@ class Framework
             });
 
             $container->set(Template::class, function (
-                Config $config,
-                CacheInterface $cache
+                CacheInterface $cache,
+                Config $config
             ): Template {
                 $template = new Template($cache);
                 foreach (Framework::getAppList() as $app) {
                     $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
                 }
-                if ($theme = $config->get('theme.name', '')) {
-                    $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-                    foreach (Framework::getAppList() as $app) {
-                        $template->addPath($app['name'], $root . '/theme/' . $theme . '/' . $app['name'], 99);
-                    }
+                $themename = $config->get('theme.name', '');
+                if ($themename && class_exists(Theme::class)) {
+                    self::execute(function (
+                        Theme $theme
+                    ) use ($themename) {
+                        $theme->set($themename);
+                    });
                 }
                 return $template;
             });
