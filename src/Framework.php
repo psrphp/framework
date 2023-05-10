@@ -170,23 +170,23 @@ class Framework
             });
 
             $container->set(Template::class, function (
-                CacheInterface $cache,
-                Config $config
+                CacheInterface $cache
             ): Template {
                 $template = new Template($cache);
                 foreach (Framework::getAppList() as $app) {
                     $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
                 }
-                $themename = $config->get('theme.name', '');
-                if ($themename && class_exists(Theme::class)) {
-                    self::execute(function (
-                        Theme $theme
-                    ) use ($themename) {
-                        $theme->set($themename);
-                    });
-                }
                 return $template;
             });
+
+            $themename = $config->get('theme.name', '');
+            if ($themename && class_exists(Theme::class)) {
+                self::execute(function (
+                    Theme $theme
+                ) use ($themename) {
+                    $theme->set($themename);
+                });
+            }
         }
         return $container;
     }
