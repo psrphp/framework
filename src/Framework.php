@@ -85,7 +85,11 @@ class Framework
 
     public static function getAppList(): array
     {
-        return self::execute(function (
+        static $list;
+        if (!is_null($list)) {
+            return $list;
+        }
+        $list = self::execute(function (
             CacheInterface $cache
         ): array {
             if (null == $list = $cache->get('applist!system')) {
@@ -107,15 +111,18 @@ class Framework
                         'dir' => dirname(dirname(dirname((new ReflectionClass($class_name))->getFileName()))),
                     ];
                 }
-                if (class_exists(Plugin::class)) {
-                    self::execute(function (Plugin $plugin) use (&$list) {
-                        $plugin->run($list);
-                    });
-                }
                 $cache->set('applist!system', $list, 86400);
             }
             return $list;
         });
+        if (class_exists(Plugin::class)) {
+            self::execute(function (
+                Plugin $plugin
+            ) use (&$list) {
+                $plugin->run($list);
+            });
+        }
+        return $list;
     }
 
     public static function execute(callable $callable, array $default_args = [])
