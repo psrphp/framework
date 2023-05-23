@@ -63,14 +63,21 @@ class Framework
             }
         });
 
-        self::execute(function (
+        self::getContainer()->onInstance(ServerRequestInterface::class, function (
+            ServerRequestInterface $server_request,
+            Route $route
+        ): ServerRequestInterface {
+            return $server_request
+                ->withQueryParams(array_merge($server_request->getQueryParams(), $route->getParams()));
+        });
+
+        self::getContainer()->onInstance(Template::class, function (
             Template $template,
             Config $config
         ) {
             foreach (Framework::getAppList() as $app) {
                 $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
             }
-
             $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
             if ($theme_name = $config->get('theme.name', 'default')) {
                 foreach (Framework::getAppList() as $app) {
@@ -205,12 +212,9 @@ class Framework
             }
 
             $container->set(ServerRequestInterface::class, function (
-                Factory $factory,
-                Route $route
+                Factory $factory
             ): ServerRequestInterface {
-                $server_request = $factory->createServerRequestFromGlobals();
-                return $server_request
-                    ->withQueryParams(array_merge($server_request->getQueryParams(), $route->getParams()));
+                return $factory->createServerRequestFromGlobals();
             });
         }
         return $container;
