@@ -29,9 +29,7 @@ use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
-use PsrPHP\Plugin\Plugin;
 use PsrPHP\Template\Template;
-use PsrPHP\Theme\Theme;
 use ReflectionClass;
 use ReflectionFunction;
 use ReflectionMethod;
@@ -50,6 +48,37 @@ class Framework
             die('composer 2 is required!');
         }
 
+        spl_autoload_register(function (string $class) {
+            $paths = explode('\\', $class);
+            if (isset($paths[3])  && $paths[0] == 'App' && $paths[1] == 'Plugin') {
+                $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+                $file = $root . '/plugin/'
+                    . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
+                    . '/src/library/'
+                    . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3))
+                    . '.php';
+                if (file_exists($file)) {
+                    include $file;
+                }
+            }
+        });
+
+        self::execute(function (
+            Template $template,
+            Config $config
+        ) {
+            foreach (Framework::getAppList() as $app) {
+                $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
+            }
+
+            $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+            if ($theme_name = $config->get('theme.name', 'default')) {
+                foreach (Framework::getAppList() as $app) {
+                    $template->addPath($app['name'], $root . '/theme/' . $theme_name . '/' . $app['name'], 99);
+                }
+            }
+        });
+
         self::hook('onInit');
 
         self::execute(function (
@@ -66,7 +95,6 @@ class Framework
 
             $handler = self::renderHandler($route);
             $response = $requestHandler->setHandler($handler)->handle($serverRequest);
-
             $emitter->emit($response);
 
             self::hook('onEnd');
@@ -89,39 +117,51 @@ class Framework
         if (!is_null($list)) {
             return $list;
         }
-        $list = self::execute(function (
-            CacheInterface $cache
-        ): array {
-            if (null == $list = $cache->get('applist!system')) {
-                $list = [];
-                $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
-                foreach (array_unique(InstalledVersions::getInstalledPackages()) as $app) {
-                    $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
-                    if (
-                        !class_exists($class_name)
-                        || !is_subclass_of($class_name, AppInterface::class)
-                    ) {
-                        continue;
-                    }
-                    if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
-                        continue;
-                    }
-                    $list[$app] = [
-                        'name' => $app,
-                        'dir' => dirname(dirname(dirname((new ReflectionClass($class_name))->getFileName()))),
-                    ];
-                }
-                $cache->set('applist!system', $list, 86400);
+
+        $list = [];
+        $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+        foreach (array_unique(InstalledVersions::getInstalledPackages()) as $app) {
+            $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
+            if (
+                !class_exists($class_name)
+                || !is_subclass_of($class_name, AppInterface::class)
+            ) {
+                continue;
             }
-            return $list;
-        });
-        if (class_exists(Plugin::class)) {
-            self::execute(function (
-                Plugin $plugin
-            ) use (&$list) {
-                $plugin->run($list);
-            });
+            if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
+                continue;
+            }
+            $list[$app] = [
+                'name' => $app,
+                'dir' => dirname(dirname(dirname((new ReflectionClass($class_name))->getFileName()))),
+            ];
         }
+
+        foreach (glob($root . '/plugin/*/src/library/App.php') as $file) {
+            $app = substr($file, strlen($root . '/'), -strlen('/src/library/App.php'));
+
+            $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
+            if (
+                !class_exists($class_name)
+                || !is_subclass_of($class_name, AppInterface::class)
+            ) {
+                continue;
+            }
+
+            if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
+                continue;
+            }
+
+            if (!file_exists($root . '/config/' . $app . '/install.lock')) {
+                continue;
+            }
+
+            $list[$app] = [
+                'name' => $app,
+                'dir' => $root . '/' . $app,
+            ];
+        }
+
         return $list;
     }
 
@@ -144,8 +184,8 @@ class Framework
         static $container;
         if ($container == null) {
             $container = new Container;
-            $config = new Config;
-            foreach (array_merge([
+            foreach ([
+                Container::class => $container,
                 ContainerInterface::class => $container,
                 LoggerInterface::class => LocalLogger::class,
                 CacheInterface::class => LocalAdapter::class,
@@ -158,10 +198,7 @@ class Framework
                 UploadedFileFactoryInterface::class => Factory::class,
                 EventDispatcherInterface::class => Event::class,
                 ListenerProviderInterface::class => Event::class,
-            ], $config->get('alias', []), [
-                Container::class => $container,
-                Config::class => $config,
-            ]) as $key => $obj) {
+            ] as $key => $obj) {
                 $container->set($key, function () use ($obj, $container) {
                     return is_string($obj) ? $container->get($obj) : $obj;
                 });
@@ -175,25 +212,6 @@ class Framework
                 return $server_request
                     ->withQueryParams(array_merge($server_request->getQueryParams(), $route->getParams()));
             });
-
-            $container->set(Template::class, function (
-                CacheInterface $cache
-            ): Template {
-                $template = new Template($cache);
-                foreach (Framework::getAppList() as $app) {
-                    $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
-                }
-                return $template;
-            });
-
-            $themename = $config->get('theme.name', '');
-            if ($themename && class_exists(Theme::class)) {
-                self::execute(function (
-                    Theme $theme
-                ) use ($themename) {
-                    $theme->set($themename);
-                });
-            }
         }
         return $container;
     }
