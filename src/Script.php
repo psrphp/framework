@@ -37,9 +37,9 @@ class Script
         } else {
             $package_name = $operation->getPackage()->getName();
         }
-        $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $package_name . '\\App', '/\\-'));
+        $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $package_name . '\\PsrPHP\\Script', '/\\-'));
 
-        if (!class_exists($class_name) || !is_subclass_of($class_name, AppInterface::class)) {
+        if (!class_exists($class_name)) {
             return;
         }
 

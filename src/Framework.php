@@ -15,6 +15,7 @@ use PsrPHP\Psr15\RequestHandler;
 use PsrPHP\Psr16\LocalAdapter;
 use PsrPHP\Psr17\Factory;
 use PsrPHP\Responser\Emitter;
+use PsrPHP\Template\Template;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\EventDispatcher\ListenerProviderInterface;
@@ -29,7 +30,6 @@ use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
-use PsrPHP\Template\Template;
 use ReflectionClass;
 use ReflectionFunction;
 use ReflectionMethod;
@@ -50,7 +50,7 @@ class Framework
 
         spl_autoload_register(function (string $class) {
             $paths = explode('\\', $class);
-            if (isset($paths[3])  && $paths[0] == 'App' && $paths[1] == 'Plugin') {
+            if (isset($paths[3]) && $paths[0] == 'App' && $paths[1] == 'Plugin') {
                 $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
                 $file = $root . '/plugin/'
                     . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
@@ -86,7 +86,7 @@ class Framework
             }
         });
 
-        self::hook('onInit');
+        Hook::execute('onInit');
 
         self::execute(function (
             RequestHandler $requestHandler,
@@ -94,7 +94,7 @@ class Framework
             Route $route,
             Emitter $emitter
         ) {
-            self::hook('onStart');
+            Hook::execute('onStart');
 
             foreach ($route->getMiddleWares() as $middleware) {
                 $requestHandler->appendMiddleware(is_string($middleware) ? self::getContainer()->get($middleware) : $middleware);
@@ -104,18 +104,8 @@ class Framework
             $response = $requestHandler->setHandler($handler)->handle($serverRequest);
             $emitter->emit($response);
 
-            self::hook('onEnd');
+            Hook::execute('onEnd');
         });
-    }
-
-    public static function hook(string $action, array $args = [])
-    {
-        foreach (array_keys(self::getAppList()) as $app) {
-            $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
-            if (method_exists($class_name, $action)) {
-                self::execute([$class_name, $action], $args);
-            }
-        }
     }
 
     public static function getAppList(): array
@@ -127,33 +117,30 @@ class Framework
 
         $list = [];
         $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
-        foreach (array_unique(InstalledVersions::getInstalledPackages()) as $app) {
-            $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
-            if (
-                !class_exists($class_name)
-                || !is_subclass_of($class_name, AppInterface::class)
-            ) {
+
+        foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
+            if ($pkg['type'] != 'psrapp') {
                 continue;
             }
-            if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
+            if (file_exists($root . '/config/' . $pkg['name'] . '/disabled.lock')) {
                 continue;
             }
-            $list[$app] = [
-                'name' => $app,
-                'dir' => dirname(dirname(dirname((new ReflectionClass($class_name))->getFileName()))),
+            $list[$pkg['name']] = [
+                'name' => $pkg['name'],
+                'dir' => $root . '/vendor/' . $pkg['name'],
             ];
         }
 
-        foreach (glob($root . '/plugin/*/src/library/App.php') as $file) {
-            $app = substr($file, strlen($root . '/'), -strlen('/src/library/App.php'));
-
-            $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $app . '\\App', '/\\-'));
-            if (
-                !class_exists($class_name)
-                || !is_subclass_of($class_name, AppInterface::class)
-            ) {
+        $dir = $root . '/plugin';
+        foreach (scandir($dir) as $vo) {
+            if (in_array($vo, array('.', '..'))) {
                 continue;
             }
+            if (!is_dir($dir . DIRECTORY_SEPARATOR . $vo)) {
+                continue;
+            }
+
+            $app = 'plugin/' . $vo;
 
             if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
                 continue;
@@ -168,7 +155,6 @@ class Framework
                 'dir' => $root . '/' . $app,
             ];
         }
-
         return $list;
     }
 
