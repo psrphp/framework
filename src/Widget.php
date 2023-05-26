@@ -47,9 +47,6 @@ class Widget
         if (!isset(Framework::getAppList()[$group])) {
             return null;
         }
-
-        $class_name = str_replace(['-', '/'], ['', '\\'], ucwords('App\\' . $group . '\\App', '/\\-'));
-        $reflector = new ReflectionClass($class_name);
-        return dirname(dirname($reflector->getFileName())) . '/widget/' . $filename . '.php';
+        return Framework::getAppList()[$group]['dir'] . '/src/widget/' . $filename . '.php';
     }
 }
