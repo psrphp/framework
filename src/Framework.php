@@ -79,9 +79,9 @@ class Framework
                 $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
             }
             $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-            foreach ($config->get('theme', []) as $name) {
+            foreach ($config->get('theme', []) as $key => $name) {
                 foreach (Framework::getAppList() as $app) {
-                    $template->addPath($app['name'], $root . '/theme/' . $name . '/' . $app['name'], 99);
+                    $template->addPath($app['name'], $root . '/theme/' . $name . '/' . $app['name'], 99 - $key);
                 }
             }
         });
