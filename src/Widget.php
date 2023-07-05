@@ -12,25 +12,21 @@ use ReflectionClass;
 
 class Widget
 {
-    private $template;
-
-    public function __construct(
-        Template $template
-    ) {
-        $this->template = $template;
-    }
-
-    public function get(string $key): string
+    public static function get(string $key): string
     {
-        $widget_file = $this->parseKey($key);
+        $widget_file = self::parseKey($key);
         if (!$widget_file || !file_exists($widget_file)) {
             throw new Exception('not found widget [' . $key . '].');
         }
 
-        return $this->template->renderFromString(file_get_contents($widget_file));
+        return Framework::execute(function (
+            Template $template
+        ) use ($widget_file): string {
+            return $template->renderFromString(file_get_contents($widget_file));
+        });
     }
 
-    private function parseKey(string $key): ?string
+    private static function parseKey(string $key): ?string
     {
         list($filename, $group) = explode('@', $key . '@');
 
