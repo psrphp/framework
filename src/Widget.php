@@ -12,21 +12,28 @@ use ReflectionClass;
 
 class Widget
 {
-    public static function get(string $key): string
-    {
-        $widget_file = self::parseKey($key);
-        if (!$widget_file || !file_exists($widget_file)) {
-            throw new Exception('not found widget [' . $key . '].');
-        }
+    private $app;
+    private $template;
 
-        return Framework::execute(function (
-            Template $template
-        ) use ($widget_file): string {
-            return $template->renderFromString(file_get_contents($widget_file));
-        });
+    public function __construct(
+        App $app,
+        Template $template
+    ) {
+        $this->app = $app;
+        $this->template = $template;
     }
 
-    private static function parseKey(string $key): ?string
+    public function get(string $key): string
+    {
+        $widget_file = $this->parseKey($key);
+        if (!$widget_file || !file_exists($widget_file)) {
+            throw new Exception('Not found widget [' . $key . '].');
+        }
+
+        return $this->template->renderFromString(file_get_contents($widget_file));
+    }
+
+    private function parseKey(string $key): ?string
     {
         list($filename, $group) = explode('@', $key . '@');
 
@@ -40,9 +47,9 @@ class Widget
         }
 
         $group = str_replace('.', '/', $group);
-        if (!App::has($group)) {
+        if (!$this->app->has($group)) {
             return null;
         }
-        return App::get($group)['dir'] . '/src/widget/' . $filename . '.php';
+        return $this->app->get($group)['dir'] . '/src/widget/' . $filename . '.php';
     }
 }

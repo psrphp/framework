@@ -11,44 +11,51 @@ use ReflectionClass;
 
 class Config
 {
-    private static $configs = [];
+    private $app;
+    private $configs = [];
 
-    public static function get(string $key = '', $default = null)
+    public function __construct(
+        App $app
+    ) {
+        $this->app = $app;
+    }
+
+    public function get(string $key = '', $default = null)
     {
-        $parse = self::parseKey($key);
+        $parse = $this->parseKey($key);
 
-        if (!isset(self::$configs[$parse['key']])) {
-            self::load($parse);
+        if (!isset($this->configs[$parse['key']])) {
+            $this->load($parse);
         }
 
-        if (is_null(self::$configs[$parse['key']])) {
+        if (is_null($this->configs[$parse['key']])) {
             return $default;
         } else {
-            return self::getValue(self::$configs[$parse['key']], $parse['paths'], $default);
+            return $this->getValue($this->configs[$parse['key']], $parse['paths'], $default);
         }
     }
 
-    public static function set(string $key, $value = null)
+    public function set(string $key, $value = null)
     {
-        $parse = self::parseKey($key);
+        $parse = $this->parseKey($key);
 
-        if (!isset(self::$configs[$parse['key']])) {
-            self::load($parse);
+        if (!isset($this->configs[$parse['key']])) {
+            $this->load($parse);
         }
 
         if (!$parse['paths'] && !is_array($value)) {
             throw new Exception('the first level:[' . $parse['key'] . '] must be array!');
         }
 
-        self::setValue(self::$configs[$parse['key']], $parse['paths'], $value);
+        $this->setValue($this->configs[$parse['key']], $parse['paths'], $value);
     }
 
-    public static function save(string $key, $value)
+    public function save(string $key, $value)
     {
-        $parse = self::parseKey($key);
+        $parse = $this->parseKey($key);
 
-        if (!isset(self::$configs[$parse['key']])) {
-            self::load($parse);
+        if (!isset($this->configs[$parse['key']])) {
+            $this->load($parse);
         }
 
         if (!$parse['paths'] && !is_array($value)) {
@@ -57,7 +64,7 @@ class Config
 
         $res = null;
         if (is_file($parse['config_file'])) {
-            $tmp = self::requireFile($parse['config_file']);
+            $tmp = $this->requireFile($parse['config_file']);
             if (is_array($tmp)) {
                 $res = $tmp;
             } elseif (!is_null($tmp)) {
@@ -65,7 +72,7 @@ class Config
             }
         }
 
-        self::setValue($res, $parse['paths'], $value);
+        $this->setValue($res, $parse['paths'], $value);
 
         if (!is_dir(dirname($parse['config_file']))) {
             mkdir(dirname($parse['config_file']), 0755, true);
@@ -74,12 +81,12 @@ class Config
         file_put_contents($parse['config_file'], '<?php return ' . var_export($res, true) . ';');
     }
 
-    private static function load(array $parse)
+    private function load(array $parse)
     {
         $args = [];
 
         if (isset($parse['default_file']) && is_file($parse['default_file'])) {
-            $tmp = self::requireFile($parse['default_file']);
+            $tmp = $this->requireFile($parse['default_file']);
             if (is_array($tmp)) {
                 $args[] = $tmp;
             } elseif (!is_null($tmp)) {
@@ -88,7 +95,7 @@ class Config
         }
 
         if (is_file($parse['config_file'])) {
-            $tmp = self::requireFile($parse['config_file']);
+            $tmp = $this->requireFile($parse['config_file']);
             if (is_array($tmp)) {
                 $args[] = $tmp;
             } elseif (!is_null($tmp)) {
@@ -96,10 +103,10 @@ class Config
             }
         }
 
-        self::$configs[$parse['key']] = $args ? array_merge(...$args) : null;
+        $this->configs[$parse['key']] = $args ? array_merge(...$args) : null;
     }
 
-    private static function getValue($data, $path, $default)
+    private function getValue($data, $path, $default)
     {
         $key = array_shift($path);
 
@@ -111,10 +118,10 @@ class Config
             return $default;
         }
 
-        return self::getValue($data[$key], $path, $default);
+        return $this->getValue($data[$key], $path, $default);
     }
 
-    private static function setValue(&$data, $path, $value)
+    private function setValue(&$data, $path, $value)
     {
         $key = array_shift($path);
         if (is_null($key)) {
@@ -123,11 +130,11 @@ class Config
             if (!isset($data[$key])) {
                 $data[$key] = null;
             }
-            self::setValue($data[$key], $path, $value);
+            $this->setValue($data[$key], $path, $value);
         }
     }
 
-    private static function parseKey(string $key): array
+    private function parseKey(string $key): array
     {
         $res = [];
 
@@ -152,7 +159,7 @@ class Config
             $res['key'] = $res['filename'];
         } else {
             $group = str_replace('.', '/', $group);
-            $res['default_file'] = App::get($group)['dir'] . '/src/config/' . $res['filename'] . '.php';
+            $res['default_file'] = $this->app->get($group)['dir'] . '/src/config/' . $res['filename'] . '.php';
             $res['config_file'] = $root . '/config/' . $group . '/' . $res['filename'] . '.php';
             $res['key'] = $res['filename'] . '@' . $group;
         }
@@ -160,7 +167,7 @@ class Config
         return $res;
     }
 
-    private static function requireFile(string $file)
+    private function requireFile(string $file)
     {
         static $loader;
         if (!$loader) {

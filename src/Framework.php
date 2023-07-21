@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\Autoload\ClassLoader;
 use Composer\InstalledVersions;
 use GuzzleHttp\Psr7\ServerRequest;
-use PsrPHP\Psr3\LocalLogger;
 use PsrPHP\Psr11\Container;
 use PsrPHP\Psr14\Event;
 use PsrPHP\Psr16\NullAdapter;
@@ -28,6 +26,7 @@ use Psr\Http\Message\UploadedFileFactoryInterface;
 use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
 use ReflectionClass;
 
@@ -52,52 +51,6 @@ class Framework
             $event->addProvider($listener);
         });
 
-        self::execute(function () {
-            $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
-
-            foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
-                if ($pkg['type'] != 'psrapp') {
-                    continue;
-                }
-                if (file_exists($root . '/config/' . $pkg['name'] . '/disabled.lock')) {
-                    continue;
-                }
-                App::set($pkg['name'], $root . '/vendor/' . $pkg['name']);
-            }
-
-            spl_autoload_register(function (string $class) use ($root) {
-                $paths = explode('\\', $class);
-                if (isset($paths[3]) && $paths[0] == 'App' && $paths[1] == 'Plugin') {
-                    $file = $root . '/plugin/'
-                        . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
-                        . '/src/library/'
-                        . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3))
-                        . '.php';
-                    if (file_exists($file)) {
-                        include $file;
-                    }
-                }
-            });
-
-            $dir = $root . '/plugin';
-            foreach (scandir($dir) as $vo) {
-                if (in_array($vo, array('.', '..'))) {
-                    continue;
-                }
-                if (!is_dir($dir . DIRECTORY_SEPARATOR . $vo)) {
-                    continue;
-                }
-                $app = 'plugin/' . $vo;
-                if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
-                    continue;
-                }
-                if (!file_exists($root . '/config/' . $app . '/install.lock')) {
-                    continue;
-                }
-                App::set($app, $root . '/' . $app);
-            }
-        });
-
         self::execute(function (
             Event $event,
             App $app
@@ -120,61 +73,19 @@ class Framework
         });
 
         self::execute(function (
-            Router $router
-        ) {
-            $uri = ServerRequest::getUriFromGlobals();
-            $res = $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', '' . $uri->withQuery(''));
-
-            Route::setFound($res[0]);
-            Route::setAllowed($res[1] ?? false);
-            Route::setHandler($res[2] ?? '');
-            Route::setMiddlewares($res[3] ?? []);
-            Route::setParams($res[5] ?? []);
-
-            if (!Route::isFound()) {
-                $paths = explode('/', $uri->getPath());
-                $pathx = explode('/', $_SERVER['SCRIPT_NAME']);
-                foreach ($pathx as $key => $value) {
-                    if (isset($paths[$key]) && ($paths[$key] == $value)) {
-                        unset($paths[$key]);
-                    }
-                }
-                if (count($paths) >= 3) {
-                    array_splice($paths, 0, 0, 'App');
-                    array_splice($paths, 3, 0, 'Http');
-                    Route::setFound(true);
-                    Route::setAllowed(true);
-                    Route::setHandler(str_replace(['-'], [''], ucwords(implode('\\', $paths), '\\-')));
-                }
-            }
-
-            if (Route::isFound()) {
-                if (!is_subclass_of(Route::getHandler(), RequestHandlerInterface::class)) {
-                    Route::setFound(false);
-                }
-                $paths = explode('\\', Route::getHandler());
-                if (!isset($paths[4]) || $paths[0] != 'App' || $paths[3] != 'Http') {
-                    Route::setFound(false);
-                }
-            }
-
-            if (Route::isFound()) {
-                $paths = explode('\\', Route::getHandler());
-                $camelToLine = function (string $str): string {
-                    return strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($str)));
-                };
-                $appname = $camelToLine($paths[1]) . '/' . $camelToLine($paths[2]);
-                if (!App::has($appname)) {
-                    Route::setFound(false);
-                }
-            }
-        });
-
-        self::execute(function (
             Event $event,
             Route $route
         ) {
             $event->dispatch($route);
+        });
+
+        self::execute(function (
+            Route $route,
+            Handler $handler,
+            Event $event
+        ) {
+            $handler->pushMiddleware(...$route->getMiddleWares());
+            $event->dispatch($handler);
         });
 
         self::execute(function (
@@ -185,18 +96,16 @@ class Framework
             ResponseFactoryInterface $responseFactory,
             Emitter $emitter
         ) {
-            Handler::pushMiddleware(...$route->getMiddleWares());
-            $event->dispatch($handler);
-
             if (!$route->isFound()) {
-                $request_handler = self::makeRequestHandler($responseFactory->createResponse(404));
+                $requestHandler = self::makeRequestHandler($responseFactory->createResponse(404));
             } else if (!$route->isAllowed()) {
-                $request_handler = self::makeRequestHandler($responseFactory->createResponse(405));
+                $requestHandler = self::makeRequestHandler($responseFactory->createResponse(405));
             } else {
-                $request_handler = self::getContainer()->get($route->getHandler());
+                $requestHandler = self::getContainer()->get($route->getHandler());
             }
-            $response = $handler->run($request_handler, $serverRequest);
+            $response = $handler->run($requestHandler, $serverRequest);
             $event->dispatch($response);
+
             $emitter->emit($response);
         });
     }
@@ -215,7 +124,7 @@ class Framework
             foreach ([
                 Container::class => $container,
                 ContainerInterface::class => $container,
-                LoggerInterface::class => LocalLogger::class,
+                LoggerInterface::class => NullLogger::class,
                 CacheInterface::class => NullAdapter::class,
                 ResponseFactoryInterface::class => Factory::class,
                 UriFactoryInterface::class => Factory::class,
@@ -232,14 +141,16 @@ class Framework
             }
 
             $container->set(Template::class, function (
+                App $app,
+                Config $config,
                 Template $template
             ): Template {
-                foreach (App::all() as $app) {
+                foreach ($app->all() as $app) {
                     $template->addPath($app['name'], $app['dir'] . '/src/template');
                 }
                 $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-                foreach (Config::get('theme', []) as $key => $name) {
-                    foreach (App::all() as $app) {
+                foreach ($config->get('theme', []) as $key => $name) {
+                    foreach ($app->all() as $app) {
                         $template->addPath($app['name'], $root . '/theme/' . $name . '/' . $app['name'], 99 - $key);
                     }
                 }

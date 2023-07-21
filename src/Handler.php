@@ -15,12 +15,42 @@ class Handler implements RequestHandlerInterface
 {
     private $container;
     private $handler;
-    private static $middlewares = [];
+    private $middlewares = [];
 
     public function __construct(
         ContainerInterface $container
     ) {
         $this->container = $container;
+    }
+
+    public function pushMiddleware(...$middlewares)
+    {
+        foreach ($middlewares as $vo) {
+            if (!is_subclass_of($vo, MiddlewareInterface::class)) {
+                throw new Exception('the middleware must be instance of ' . MiddlewareInterface::class);
+            }
+            array_push($this->middlewares, $vo);
+        }
+    }
+
+    public function unShiftMiddleware(...$middlewares)
+    {
+        foreach ($middlewares as $vo) {
+            if (!is_subclass_of($vo, MiddlewareInterface::class)) {
+                throw new Exception('the middleware must be instance of ' . MiddlewareInterface::class);
+            }
+            array_unshift($this->middlewares, $vo);
+        }
+    }
+
+    public function popMiddleware()
+    {
+        return array_pop($this->middlewares);
+    }
+
+    public function shiftMiddleware()
+    {
+        return array_shift($this->middlewares);
     }
 
     public function run(
@@ -41,35 +71,5 @@ class Handler implements RequestHandlerInterface
         } else {
             return $this->handler->handle($request);
         }
-    }
-
-    public static function pushMiddleware(...$middlewares)
-    {
-        foreach ($middlewares as $vo) {
-            if (!is_subclass_of($vo, MiddlewareInterface::class)) {
-                throw new Exception('the middleware must be instance of ' . MiddlewareInterface::class);
-            }
-            array_push(self::$middlewares, $vo);
-        }
-    }
-
-    public static function unShiftMiddleware(...$middlewares)
-    {
-        foreach ($middlewares as $vo) {
-            if (!is_subclass_of($vo, MiddlewareInterface::class)) {
-                throw new Exception('the middleware must be instance of ' . MiddlewareInterface::class);
-            }
-            array_unshift(self::$middlewares, $vo);
-        }
-    }
-
-    public static function popMiddleware()
-    {
-        return array_pop(self::$middlewares);
-    }
-
-    public static function shiftMiddleware()
-    {
-        return array_shift(self::$middlewares);
     }
 }
