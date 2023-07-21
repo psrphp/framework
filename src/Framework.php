@@ -6,15 +6,14 @@ namespace PsrPHP\Framework;
 
 use Composer\Autoload\ClassLoader;
 use Composer\InstalledVersions;
-use Exception;
-use PsrPHP\Framework\Route;
+use GuzzleHttp\Psr7\ServerRequest;
 use PsrPHP\Psr3\LocalLogger;
 use PsrPHP\Psr11\Container;
 use PsrPHP\Psr14\Event;
-use PsrPHP\Psr15\RequestHandler;
-use PsrPHP\Psr16\LocalAdapter;
+use PsrPHP\Psr16\NullAdapter;
 use PsrPHP\Psr17\Factory;
 use PsrPHP\Responser\Emitter;
+use PsrPHP\Router\Router;
 use PsrPHP\Template\Template;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -31,8 +30,6 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 use ReflectionClass;
-use ReflectionFunction;
-use ReflectionMethod;
 
 class Framework
 {
@@ -48,127 +45,165 @@ class Framework
             die('composer 2 is required!');
         }
 
-        spl_autoload_register(function (string $class) {
-            $paths = explode('\\', $class);
-            if (isset($paths[3]) && $paths[0] == 'App' && $paths[1] == 'Plugin') {
-                $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
-                $file = $root . '/plugin/'
-                    . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
-                    . '/src/library/'
-                    . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3))
-                    . '.php';
-                if (file_exists($file)) {
-                    include $file;
-                }
-            }
-        });
-
-        self::getContainer()->onInstance(ServerRequestInterface::class, function (
-            ServerRequestInterface $server_request,
-            Route $route
-        ): ServerRequestInterface {
-            return $server_request
-                ->withQueryParams(array_merge($server_request->getQueryParams(), $route->getParams()));
-        });
-
-        self::getContainer()->onInstance(Template::class, function (
-            Template $template,
-            Config $config
+        self::execute(function (
+            Event $event,
+            Listener $listener
         ) {
-            foreach (Framework::getAppList() as $app) {
-                $template->addPath($app['name'], $app['dir'] . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'template');
-            }
-            $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
-            foreach ($config->get('theme', []) as $key => $name) {
-                foreach (Framework::getAppList() as $app) {
-                    $template->addPath($app['name'], $root . '/theme/' . $name . '/' . $app['name'], 99 - $key);
-                }
-            }
+            $event->addProvider($listener);
         });
 
-        Hook::execute('onInit');
+        self::execute(function () {
+            $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+
+            foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
+                if ($pkg['type'] != 'psrapp') {
+                    continue;
+                }
+                if (file_exists($root . '/config/' . $pkg['name'] . '/disabled.lock')) {
+                    continue;
+                }
+                App::set($pkg['name'], $root . '/vendor/' . $pkg['name']);
+            }
+
+            spl_autoload_register(function (string $class) use ($root) {
+                $paths = explode('\\', $class);
+                if (isset($paths[3]) && $paths[0] == 'App' && $paths[1] == 'Plugin') {
+                    $file = $root . '/plugin/'
+                        . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
+                        . '/src/library/'
+                        . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3))
+                        . '.php';
+                    if (file_exists($file)) {
+                        include $file;
+                    }
+                }
+            });
+
+            $dir = $root . '/plugin';
+            foreach (scandir($dir) as $vo) {
+                if (in_array($vo, array('.', '..'))) {
+                    continue;
+                }
+                if (!is_dir($dir . DIRECTORY_SEPARATOR . $vo)) {
+                    continue;
+                }
+                $app = 'plugin/' . $vo;
+                if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
+                    continue;
+                }
+                if (!file_exists($root . '/config/' . $app . '/install.lock')) {
+                    continue;
+                }
+                App::set($app, $root . '/' . $app);
+            }
+        });
 
         self::execute(function (
-            RequestHandler $requestHandler,
-            ServerRequestInterface $serverRequest,
-            Route $route,
-            Emitter $emitter
+            Event $event,
+            App $app
         ) {
-            Hook::execute('onStart');
+            $event->dispatch($app);
+        });
 
-            foreach ($route->getMiddleWares() as $middleware) {
-                $requestHandler->appendMiddleware(is_string($middleware) ? self::getContainer()->get($middleware) : $middleware);
+        self::execute(function (
+            Event $event,
+            Container $container
+        ) {
+            $event->dispatch($container);
+        });
+
+        self::execute(function (
+            Event $event,
+            Router $router
+        ) {
+            $event->dispatch($router);
+        });
+
+        self::execute(function (
+            Router $router
+        ) {
+            $uri = ServerRequest::getUriFromGlobals();
+            $res = $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', '' . $uri->withQuery(''));
+
+            Route::setFound($res[0]);
+            Route::setAllowed($res[1] ?? false);
+            Route::setHandler($res[2] ?? '');
+            Route::setMiddlewares($res[3] ?? []);
+            Route::setParams($res[5] ?? []);
+
+            if (!Route::isFound()) {
+                $paths = explode('/', $uri->getPath());
+                $pathx = explode('/', $_SERVER['SCRIPT_NAME']);
+                foreach ($pathx as $key => $value) {
+                    if (isset($paths[$key]) && ($paths[$key] == $value)) {
+                        unset($paths[$key]);
+                    }
+                }
+                if (count($paths) >= 3) {
+                    array_splice($paths, 0, 0, 'App');
+                    array_splice($paths, 3, 0, 'Http');
+                    Route::setFound(true);
+                    Route::setAllowed(true);
+                    Route::setHandler(str_replace(['-'], [''], ucwords(implode('\\', $paths), '\\-')));
+                }
             }
 
-            $handler = self::renderHandler($route);
-            $response = $requestHandler->setHandler($handler)->handle($serverRequest);
-            $emitter->emit($response);
+            if (Route::isFound()) {
+                if (!is_subclass_of(Route::getHandler(), RequestHandlerInterface::class)) {
+                    Route::setFound(false);
+                }
+                $paths = explode('\\', Route::getHandler());
+                if (!isset($paths[4]) || $paths[0] != 'App' || $paths[3] != 'Http') {
+                    Route::setFound(false);
+                }
+            }
 
-            Hook::execute('onEnd');
+            if (Route::isFound()) {
+                $paths = explode('\\', Route::getHandler());
+                $camelToLine = function (string $str): string {
+                    return strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($str)));
+                };
+                $appname = $camelToLine($paths[1]) . '/' . $camelToLine($paths[2]);
+                if (!App::has($appname)) {
+                    Route::setFound(false);
+                }
+            }
+        });
+
+        self::execute(function (
+            Event $event,
+            Route $route
+        ) {
+            $event->dispatch($route);
+        });
+
+        self::execute(function (
+            Route $route,
+            Handler $handler,
+            Event $event,
+            ServerRequestInterface $serverRequest,
+            ResponseFactoryInterface $responseFactory,
+            Emitter $emitter
+        ) {
+            Handler::pushMiddleware(...$route->getMiddleWares());
+            $event->dispatch($handler);
+
+            if (!$route->isFound()) {
+                $request_handler = self::makeRequestHandler($responseFactory->createResponse(404));
+            } else if (!$route->isAllowed()) {
+                $request_handler = self::makeRequestHandler($responseFactory->createResponse(405));
+            } else {
+                $request_handler = self::getContainer()->get($route->getHandler());
+            }
+            $response = $handler->run($request_handler, $serverRequest);
+            $event->dispatch($response);
+            $emitter->emit($response);
         });
     }
 
-    public static function getAppList(): array
+    public static function execute(callable $callable, array $params = [])
     {
-        static $list;
-        if (!is_null($list)) {
-            return $list;
-        }
-
-        $list = [];
-        $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
-
-        foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
-            if ($pkg['type'] != 'psrapp') {
-                continue;
-            }
-            if (file_exists($root . '/config/' . $pkg['name'] . '/disabled.lock')) {
-                continue;
-            }
-            $list[$pkg['name']] = [
-                'name' => $pkg['name'],
-                'dir' => $root . '/vendor/' . $pkg['name'],
-            ];
-        }
-
-        $dir = $root . '/plugin';
-        foreach (scandir($dir) as $vo) {
-            if (in_array($vo, array('.', '..'))) {
-                continue;
-            }
-            if (!is_dir($dir . DIRECTORY_SEPARATOR . $vo)) {
-                continue;
-            }
-
-            $app = 'plugin/' . $vo;
-
-            if (file_exists($root . '/config/' . $app . '/disabled.lock')) {
-                continue;
-            }
-
-            if (!file_exists($root . '/config/' . $app . '/install.lock')) {
-                continue;
-            }
-
-            $list[$app] = [
-                'name' => $app,
-                'dir' => $root . '/' . $app,
-            ];
-        }
-        return $list;
-    }
-
-    public static function execute(callable $callable, array $default_args = [])
-    {
-        if (is_array($callable)) {
-            $args = self::getContainer()->reflectArguments(new ReflectionMethod(...$callable), $default_args);
-        } elseif (is_object($callable)) {
-            $args = self::getContainer()->reflectArguments(new ReflectionMethod($callable, '__invoke'), $default_args);
-        } elseif (is_string($callable) && strpos($callable, '::')) {
-            $args = self::getContainer()->reflectArguments(new ReflectionMethod($callable), $default_args);
-        } else {
-            $args = self::getContainer()->reflectArguments(new ReflectionFunction($callable), $default_args);
-        }
+        $args = self::getContainer()->reflectArguments($callable, $params);
         return call_user_func($callable, ...$args);
     }
 
@@ -181,8 +216,7 @@ class Framework
                 Container::class => $container,
                 ContainerInterface::class => $container,
                 LoggerInterface::class => LocalLogger::class,
-                CacheInterface::class => LocalAdapter::class,
-                RequestHandlerInterface::class => RequestHandler::class,
+                CacheInterface::class => NullAdapter::class,
                 ResponseFactoryInterface::class => Factory::class,
                 UriFactoryInterface::class => Factory::class,
                 ServerRequestFactoryInterface::class => Factory::class,
@@ -197,92 +231,46 @@ class Framework
                 });
             }
 
+            $container->set(Template::class, function (
+                Template $template
+            ): Template {
+                foreach (App::all() as $app) {
+                    $template->addPath($app['name'], $app['dir'] . '/src/template');
+                }
+                $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+                foreach (Config::get('theme', []) as $key => $name) {
+                    foreach (App::all() as $app) {
+                        $template->addPath($app['name'], $root . '/theme/' . $name . '/' . $app['name'], 99 - $key);
+                    }
+                }
+                return $template;
+            });
+
             $container->set(ServerRequestInterface::class, function (
-                Factory $factory
+                Route $route
             ): ServerRequestInterface {
-                return $factory->createServerRequestFromGlobals();
+                $request = ServerRequest::fromGlobals();
+                return $request->withQueryParams(array_merge($request->getQueryParams(), $route->getParams()));
             });
         }
+
         return $container;
     }
 
-    private static function renderHandler(Route $route): callable
+    private static function makeRequestHandler(ResponseInterface $response): RequestHandlerInterface
     {
-        if (!$route->isFound()) {
-            return function (): ResponseInterface {
-                return self::execute(function (
-                    Factory $factory
-                ) {
-                    return $factory->createResponse(404);
-                });
-            };
-        }
-
-        if ($route->getApp() && !isset(self::getAppList()[$route->getApp()])) {
-            return function (): ResponseInterface {
-                return self::execute(function (
-                    Factory $factory
-                ) {
-                    return $factory->createResponse(404);
-                });
-            };
-        }
-
-        if (!$route->isAllowed()) {
-            return function (): ResponseInterface {
-                return self::execute(function (
-                    Factory $factory
-                ) {
-                    return $factory->createResponse(405);
-                });
-            };
-        }
-
-        $handler = $route->getHandler();
-
-        if (is_array($handler)) {
-            if (false === (new ReflectionMethod(...$handler))->isStatic()) {
-                if (!is_object($handler[0])) {
-                    $handler[0] = self::getContainer()->get($handler[0]);
-                }
+        return new class($response) implements RequestHandlerInterface
+        {
+            private $response;
+            public function __construct(ResponseInterface $response)
+            {
+                $this->response = $response;
             }
-        } elseif (is_string($handler) && class_exists($handler)) {
-            $handler = self::getContainer()->get($handler);
-        }
 
-        if (!is_callable($handler)) {
-            return function (): ResponseInterface {
-                return self::execute(function (
-                    Factory $factory
-                ) {
-                    return $factory->createResponse(404);
-                });
-            };
-        }
-
-        return function () use ($handler): ResponseInterface {
-            return self::execute(function (
-                Factory $factory
-            ) use ($handler): ResponseInterface {
-
-                $resp = self::execute($handler);
-
-                if (is_null($resp)) {
-                    return $factory->createResponse(200);
-                }
-
-                if ($resp instanceof ResponseInterface) {
-                    return $resp;
-                }
-
-                if (is_scalar($resp) || (is_object($resp) && method_exists($resp, '__toString'))) {
-                    $response = $factory->createResponse(200);
-                    $response->getBody()->write('' . $resp);
-                    return $response;
-                } else {
-                    throw new Exception('Unrecognized Response');
-                }
-            });
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                return $this->response;
+            }
         };
     }
 }

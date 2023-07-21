@@ -152,7 +152,7 @@ class Config
             $res['key'] = $res['filename'];
         } else {
             $group = str_replace('.', '/', $group);
-            $res['default_file'] = Framework::getAppList()[$group]['dir'] . '/src/config/' . $res['filename'] . '.php';
+            $res['default_file'] = App::get($group)['dir'] . '/src/config/' . $res['filename'] . '.php';
             $res['config_file'] = $root . '/config/' . $group . '/' . $res['filename'] . '.php';
             $res['key'] = $res['filename'] . '@' . $group;
         }

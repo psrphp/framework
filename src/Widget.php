@@ -40,9 +40,9 @@ class Widget
         }
 
         $group = str_replace('.', '/', $group);
-        if (!isset(Framework::getAppList()[$group])) {
+        if (!App::has($group)) {
             return null;
         }
-        return Framework::getAppList()[$group]['dir'] . '/src/widget/' . $filename . '.php';
+        return App::get($group)['dir'] . '/src/widget/' . $filename . '.php';
     }
 }
