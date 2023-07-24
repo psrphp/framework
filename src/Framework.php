@@ -145,13 +145,13 @@ class Framework
                 Config $config,
                 Template $template
             ): Template {
-                foreach ($app->all() as $app) {
-                    $template->addPath($app['name'], $app['dir'] . '/src/template');
+                foreach ($app->all() as $vo) {
+                    $template->addPath($vo['name'], $vo['dir'] . '/src/template');
                 }
                 $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
                 foreach ($config->get('theme', []) as $key => $name) {
-                    foreach ($app->all() as $app) {
-                        $template->addPath($app['name'], $root . '/theme/' . $name . '/' . $app['name'], 99 - $key);
+                    foreach ($app->all() as $vo) {
+                        $template->addPath($vo['name'], $root . '/theme/' . $name . '/' . $vo['name'], 99 - $key);
                     }
                 }
                 return $template;
