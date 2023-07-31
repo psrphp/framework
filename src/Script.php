@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
+use Composer\Autoload\ClassLoader;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\DependencyResolver\Operation\UninstallOperation;
 use Composer\DependencyResolver\Operation\UpdateOperation;
 use Composer\Installer\PackageEvent;
 use Exception;
 use PDO;
+use ReflectionClass;
 use Throwable;
 
 class Script
@@ -48,7 +50,8 @@ class Script
     {
         start:
         try {
-            $cfgfile = getcwd() . '/vendor/' . $appname . '/src/config/app.php';
+            $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+            $cfgfile = $root . '/vendor/' . $appname . '/src/config/app.php';
             if (!file_exists($cfgfile)) {
                 return;
             }
@@ -100,7 +103,8 @@ class Script
         $sqls = array_filter(explode(";" . PHP_EOL, $sql));
 
         $prefix = 'prefix_';
-        $cfg_file = getcwd() . '/config/database.php';
+        $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+        $cfg_file = $root . '/config/database.php';
         $cfg = (array)include $cfg_file;
         if (isset($cfg['master']['prefix'])) {
             $prefix = $cfg['master']['prefix'];
