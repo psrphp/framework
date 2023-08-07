@@ -21,16 +21,15 @@ class Listener implements ListenerProviderInterface
 
     public function getListenersForEvent(object $event): iterable
     {
-        $class = get_class($event);
         foreach ($this->app->all() as $app) {
             foreach ($this->config->get('event@' . $app['name'], []) as $type => $listeners) {
-                if (!is_subclass_of($class, $type) && $class != $type) {
+                if (!is_a($event, $type, true)) {
                     continue;
                 }
                 foreach ($listeners as $listener) {
-                    yield function () use ($listener, $class, $event) {
+                    yield function () use ($listener, $type, $event) {
                         Framework::execute($listener, [
-                            $class => $event
+                            $type => $event
                         ]);
                     };
                 }
