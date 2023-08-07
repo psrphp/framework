@@ -103,6 +103,8 @@ class Framework
             } else {
                 $requestHandler = self::getContainer()->get($route->getHandler());
             }
+            $event->dispatch($requestHandler);
+
             $response = $handler->run($requestHandler, $serverRequest);
             $event->dispatch($response);
 
