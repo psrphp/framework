@@ -4,17 +4,13 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\Autoload\ClassLoader;
-use ReflectionClass;
-
 class App
 {
     private $apps = [];
 
     public function __construct()
     {
-        $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
-
+        $root = dirname(dirname(dirname(dirname(__DIR__))));
         foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
             if ($pkg['type'] != 'psrapp') {
                 continue;

@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\Autoload\ClassLoader;
 use Exception;
 use InvalidArgumentException;
 use PsrPHP\Template\Template;
-use ReflectionClass;
 
 class Widget
 {
@@ -42,7 +40,7 @@ class Widget
         }
 
         if (!strlen($group)) {
-            $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+            $root = dirname(dirname(dirname(dirname(__DIR__))));
             return $root . '/widget/' . $filename . '.php';
         }
 

@@ -28,7 +28,6 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
-use ReflectionClass;
 
 class Framework
 {
@@ -150,7 +149,7 @@ class Framework
                 foreach ($app->all() as $vo) {
                     $template->addPath($vo['name'], $vo['dir'] . '/src/template');
                 }
-                $root = dirname(dirname(dirname((new ReflectionClass(InstalledVersions::class))->getFileName())));
+                $root = dirname(dirname(dirname(dirname(__DIR__))));
                 foreach ($config->get('theme', []) as $key => $name) {
                     foreach ($app->all() as $vo) {
                         $template->addPath($vo['name'], $root . '/theme/' . $name . '/' . $vo['name'], 99 - $key);

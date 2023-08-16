@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\Autoload\ClassLoader;
 use Exception;
 use InvalidArgumentException;
-use ReflectionClass;
 
 class Config
 {
@@ -153,7 +151,7 @@ class Config
 
         $res['filename'] = array_shift($paths);
         $res['paths'] = $paths;
-        $root = dirname(dirname(dirname((new ReflectionClass(ClassLoader::class))->getFileName())));
+        $root = dirname(dirname(dirname(dirname(__DIR__))));
         if (!strlen($group)) {
             $res['config_file'] = $root . '/config/' . $res['filename'] . '.php';
             $res['key'] = $res['filename'];
