@@ -44,17 +44,16 @@ class Framework
         }
 
         self::execute(function (
+            App $app,
             Event $event,
-            Listener $listener
+            Container $container,
         ) {
-            $event->addProvider($listener);
-        });
-
-        self::execute(function (
-            Event $event,
-            App $app
-        ) {
-            $event->dispatch($app);
+            foreach ($app->all() as $vo) {
+                $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($vo['name'], '/-')) . '\\Psrphp\\ListenerProvider';
+                if (class_exists($cls) && is_subclass_of($cls, ListenerProviderInterface::class)) {
+                    $event->addProvider($container->get($cls));
+                }
+            }
         });
 
         self::execute(function (
@@ -79,9 +78,9 @@ class Framework
         });
 
         self::execute(function (
+            Event $event,
             Route $route,
             Handler $handler,
-            Event $event
         ) {
             $handler->pushMiddleware(...$route->getMiddleWares());
             $event->dispatch($handler);
@@ -89,11 +88,11 @@ class Framework
 
         self::execute(function (
             Route $route,
-            Handler $handler,
             Event $event,
+            Emitter $emitter,
+            Handler $handler,
             ServerRequestInterface $serverRequest,
             ResponseFactoryInterface $responseFactory,
-            Emitter $emitter
         ) {
             if (!$route->isFound()) {
                 $requestHandler = self::makeRequestHandler($responseFactory->createResponse(404));

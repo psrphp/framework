@@ -21,7 +21,10 @@ class Script
          */
         $operation = $event->getOperation();
         $package_name = $operation->getPackage()->getName();
-        self::exec($package_name, 'install', $event);
+        $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
+        self::exec($cls . '::onInstall', [
+            PackageEvent::class => $event,
+        ]);
     }
 
     public static function onUnInstall(PackageEvent $event)
@@ -31,7 +34,10 @@ class Script
          */
         $operation = $event->getOperation();
         $package_name = $operation->getPackage()->getName();
-        self::exec($package_name, 'unInstall', $event);
+        $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
+        self::exec($cls . '::onUnInstall', [
+            PackageEvent::class => $event,
+        ]);
     }
 
     public static function onUpdate(PackageEvent $event)
@@ -41,25 +47,17 @@ class Script
          */
         $operation = $event->getOperation();
         $package_name = $operation->getTargetPackage()->getName();
-        self::exec($package_name, 'update', $event);
+        $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
+        self::exec($cls . '::onUpdate', [
+            PackageEvent::class => $event,
+        ]);
     }
 
-    private static function exec(string $appname, string $method, PackageEvent $event)
+    private static function exec(callable $callable, $params = [])
     {
         start:
         try {
-            $root = dirname(dirname(dirname(dirname(__DIR__))));
-            $cfgfile = $root . '/vendor/' . $appname . '/src/config/app.php';
-            if (!file_exists($cfgfile)) {
-                return;
-            }
-            $appcfg = self::requireFile($cfgfile);
-            if (!isset($appcfg[$method]) || !is_callable($appcfg[$method])) {
-                return;
-            }
-            Framework::execute($appcfg[$method], [
-                PackageEvent::class => $event,
-            ]);
+            Framework::execute($callable, $params);
         } catch (Throwable $th) {
             fwrite(STDOUT, "发生错误：" . $th->getMessage() . "\n");
             fwrite(STDOUT, "重试请输[r] 忽略请输[y] 终止请输[q]：");
@@ -79,21 +77,6 @@ class Script
                     break;
             }
         }
-    }
-
-    public static function requireFile(string $file)
-    {
-        static $loader;
-        if (!$loader) {
-            $loader = new class()
-            {
-                public function load(string $file)
-                {
-                    return require $file;
-                }
-            };
-        }
-        return $loader->load($file);
     }
 
     public static function execSql(string $sql)

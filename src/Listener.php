@@ -6,33 +6,27 @@ namespace PsrPHP\Framework;
 
 use Psr\EventDispatcher\ListenerProviderInterface;
 
-class Listener implements ListenerProviderInterface
+abstract class Listener implements ListenerProviderInterface
 {
-    private $app;
-    private $config;
+    protected $listeners = [];
 
-    public function __construct(
-        App $app,
-        Config $config
-    ) {
-        $this->app = $app;
-        $this->config = $config;
+    protected function add(string $cls, callable $callable)
+    {
+        $this->listeners[$cls][] = $callable;
     }
 
     public function getListenersForEvent(object $event): iterable
     {
-        foreach ($this->app->all() as $app) {
-            foreach ($this->config->get('event@' . $app['name'], []) as $type => $listeners) {
-                if (!is_a($event, $type, true)) {
-                    continue;
-                }
-                foreach ($listeners as $listener) {
-                    yield function () use ($listener, $type, $event) {
-                        Framework::execute($listener, [
-                            $type => $event
-                        ]);
-                    };
-                }
+        foreach ($this->listeners as $type => $listeners) {
+            if (!is_a($event, $type, true)) {
+                continue;
+            }
+            foreach ($listeners as $listener) {
+                yield function () use ($listener, $type, $event) {
+                    Framework::execute($listener, [
+                        $type => $event,
+                    ]);
+                };
             }
         }
     }

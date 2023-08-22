@@ -54,7 +54,7 @@ class App
         }
     }
 
-    public function set(string $appname, string $dir)
+    private function set(string $appname, string $dir)
     {
         $this->apps[$appname] = [
             'name' => $appname,
@@ -70,11 +70,6 @@ class App
     public function has(string $appname): bool
     {
         return isset($this->apps[$appname]);
-    }
-
-    public function delete(string $appname)
-    {
-        unset($this->apps[$appname]);
     }
 
     public function all(): array
