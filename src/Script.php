@@ -22,9 +22,11 @@ class Script
         $operation = $event->getOperation();
         $package_name = $operation->getPackage()->getName();
         $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
-        self::exec($cls . '::onInstall', [
-            PackageEvent::class => $event,
-        ]);
+        if (class_exists($cls) && is_callable([$cls, 'onInstall'])) {
+            self::exec([$cls, 'onInstall'], [
+                PackageEvent::class => $event,
+            ]);
+        }
     }
 
     public static function onUnInstall(PackageEvent $event)
@@ -35,9 +37,11 @@ class Script
         $operation = $event->getOperation();
         $package_name = $operation->getPackage()->getName();
         $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
-        self::exec($cls . '::onUnInstall', [
-            PackageEvent::class => $event,
-        ]);
+        if (class_exists($cls) && is_callable([$cls, 'onUnInstall'])) {
+            self::exec([$cls, 'onUnInstall'], [
+                PackageEvent::class => $event,
+            ]);
+        }
     }
 
     public static function onUpdate(PackageEvent $event)
@@ -48,9 +52,11 @@ class Script
         $operation = $event->getOperation();
         $package_name = $operation->getTargetPackage()->getName();
         $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
-        self::exec($cls . '::onUpdate', [
-            PackageEvent::class => $event,
-        ]);
+        if (class_exists($cls) && is_callable([$cls, 'onUpdate'])) {
+            self::exec([$cls, 'onUpdate'], [
+                PackageEvent::class => $event,
+            ]);
+        }
     }
 
     private static function exec(callable $callable, $params = [])
