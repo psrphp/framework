@@ -27,7 +27,7 @@ class Route
         $this->setAllowed($res[1] ?? false);
         $this->setHandler($res[2] ?? '');
         $this->setMiddlewares($res[3] ?? []);
-        $this->setParams($res[5] ?? []);
+        $this->setParams($res[4] ?? []);
 
         if (!$this->isFound()) {
             $paths = explode('/', $uri->getPath());
