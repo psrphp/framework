@@ -54,6 +54,7 @@ class Framework
                     $event->addProvider($container->get($cls));
                 }
             }
+            $event->dispatch($app);
         });
 
         self::execute(function (
@@ -142,17 +143,10 @@ class Framework
 
             $container->set(Template::class, function (
                 App $app,
-                Config $config,
                 Template $template
             ): Template {
                 foreach ($app->all() as $vo) {
                     $template->addPath($vo['name'], $vo['dir'] . '/src/template');
-                }
-                $root = dirname(dirname(dirname(dirname(__DIR__))));
-                foreach ($config->get('theme', []) as $key => $name) {
-                    foreach ($app->all() as $vo) {
-                        $template->addPath($vo['name'], $root . '/theme/' . $name . '/' . $vo['name'], 99 - $key);
-                    }
                 }
                 return $template;
             });
