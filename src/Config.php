@@ -9,135 +9,135 @@ use InvalidArgumentException;
 
 class Config
 {
-    private $app;
     private $configs = [];
-
-    public function __construct(
-        App $app
-    ) {
-        $this->app = $app;
-    }
 
     public function get(string $key = '', $default = null)
     {
-        $parse = $this->parseKey($key);
+        list($filename, $appname, $paths) = $this->parseKey($key);
+        $ck = $filename . '@' . $appname;
 
-        if (!isset($this->configs[$parse['key']])) {
-            $this->load($parse);
+        if (!isset($this->configs[$ck])) {
+            $this->configs[$ck] = $this->load($filename, $appname);
         }
 
-        if (is_null($this->configs[$parse['key']])) {
-            return $default;
-        } else {
-            return $this->getValue($this->configs[$parse['key']], $parse['paths'], $default);
-        }
+        return $this->getValue($this->configs[$ck], $paths, $default);
     }
 
     public function set(string $key, $value = null)
     {
-        $parse = $this->parseKey($key);
+        list($filename, $appname, $paths) = $this->parseKey($key);
+        $ck = $filename . '@' . $appname;
 
-        if (!isset($this->configs[$parse['key']])) {
-            $this->load($parse);
+        if (!isset($this->configs[$ck])) {
+            $this->configs[$ck] = $this->load($filename, $appname);
         }
 
-        if (!$parse['paths'] && !is_array($value)) {
-            throw new Exception('the first level:[' . $parse['key'] . '] must be array!');
+        if (!$paths && !is_array($value)) {
+            throw new Exception('the first level:[' . $ck . '] must be array!');
         }
 
-        $this->setValue($this->configs[$parse['key']], $parse['paths'], $value);
+        $this->setValue($this->configs[$ck], $paths, $value);
     }
 
     public function save(string $key, $value)
     {
-        $parse = $this->parseKey($key);
+        list($filename, $appname, $paths) = $this->parseKey($key);
+        $ck = $filename . '@' . $appname;
 
-        if (!isset($this->configs[$parse['key']])) {
-            $this->load($parse);
+        if (!isset($this->configs[$ck])) {
+            $this->configs[$ck] = $this->load($filename, $appname);
         }
 
-        if (!$parse['paths'] && !is_array($value)) {
-            throw new Exception('the first level:[' . $parse['key'] . '] must be array!');
+        if (!$paths && !is_array($value)) {
+            throw new Exception('the first level:[' . $ck . '] must be array!');
         }
 
-        $res = null;
-        if (is_file($parse['config_file'])) {
-            $tmp = $this->requireFile($parse['config_file']);
-            if (is_array($tmp)) {
-                $res = $tmp;
-            } elseif (!is_null($tmp)) {
-                throw new Exception('the config file:[' . $parse['config_file'] . '] must return array!');
+        $res = [];
+        $file = dirname(__DIR__, 4) . '/config/' . $filename . '.php';
+        if (is_file($file)) {
+            $tmp = $this->requireFile($file);
+            if (!is_array($tmp)) {
+                throw new Exception('the config file:[' . $file . '] must return array!');
             }
+            $res = $tmp;
         }
 
-        $this->setValue($res, $parse['paths'], $value);
+        $this->setValue($res, $paths, $value);
 
-        if (!is_dir(dirname($parse['config_file']))) {
-            mkdir(dirname($parse['config_file']), 0755, true);
+        if (!is_dir(dirname($file))) {
+            mkdir(dirname($file), 0755, true);
         }
 
-        file_put_contents($parse['config_file'], '<?php return ' . var_export($res, true) . ';');
+        file_put_contents($file, '<?php return ' . var_export($res, true) . ';');
     }
 
-    private function load(array $parse)
+    private function load(string $filename, string $appname): array
     {
-        $args = [];
-
-        if (isset($parse['default_file']) && is_file($parse['default_file'])) {
-            $tmp = $this->requireFile($parse['default_file']);
-            if (is_array($tmp)) {
-                $args[] = $tmp;
-            } elseif (!is_null($tmp)) {
-                throw new Exception('the config file:[' . $parse['default_file'] . '] must return array!');
+        $files = [];
+        $root = dirname(__DIR__, 4);
+        if (!strlen($appname)) {
+            if (file_exists($root . '/config/' . $filename . '.php')) {
+                $files[] = $root . '/config/' . $filename . '.php';
+            }
+        } else {
+            if (!array_key_exists($appname, Framework::getAppList())) {
+                throw new Exception('配置读取错误：应用' . $appname . '不存在~');
+            }
+            $file = Framework::getAppList()[$appname] . '/src/config/' . $filename . '.php';
+            if (file_exists($file)) {
+                $files[] = $file;
+            }
+            if (file_exists($root . '/config/' . $appname . '/' . $filename . '.php')) {
+                $files[] = $root . '/config/' . $appname . '/' . $filename . '.php';
             }
         }
 
-        if (is_file($parse['config_file'])) {
-            $tmp = $this->requireFile($parse['config_file']);
-            if (is_array($tmp)) {
-                $args[] = $tmp;
-            } elseif (!is_null($tmp)) {
-                throw new Exception('the config file:[' . $parse['config_file'] . '] must return array!');
+        $res = [];
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                $tmp = $this->requireFile($file);
+                if (is_array($tmp)) {
+                    $res = array_merge($res, $tmp);
+                } elseif (!is_null($tmp)) {
+                    throw new Exception('the config file:[' . $file . '] must return array!');
+                }
             }
         }
-
-        $this->configs[$parse['key']] = $args ? array_merge(...$args) : null;
+        return $res;
     }
 
-    private function getValue($data, $path, $default)
+    private function getValue($data, $paths, $default)
     {
-        $key = array_shift($path);
-
-        if (is_null($key)) {
+        if (!$paths) {
             return $data;
         }
+
+        $key = array_shift($paths);
 
         if (!isset($data[$key])) {
             return $default;
         }
 
-        return $this->getValue($data[$key], $path, $default);
+        return $this->getValue($data[$key], $paths, $default);
     }
 
-    private function setValue(&$data, $path, $value)
+    private function setValue(&$data, array $paths, $value)
     {
-        $key = array_shift($path);
+        $key = array_shift($paths);
         if (is_null($key)) {
             $data = $value;
         } else {
             if (!isset($data[$key])) {
                 $data[$key] = null;
             }
-            $this->setValue($data[$key], $path, $value);
+            $this->setValue($data[$key], $paths, $value);
         }
     }
 
     private function parseKey(string $key): array
     {
         $res = [];
-
         list($path, $group) = explode('@', $key . '@');
-
         if (!strlen($path)) {
             throw new InvalidArgumentException('Invalid Argument Exception');
         }
@@ -149,19 +149,9 @@ class Config
             }
         );
 
-        $res['filename'] = array_shift($paths);
-        $res['paths'] = $paths;
-        $root = dirname(dirname(dirname(dirname(__DIR__))));
-        if (!strlen($group)) {
-            $res['config_file'] = $root . '/config/' . $res['filename'] . '.php';
-            $res['key'] = $res['filename'];
-        } else {
-            $group = str_replace('.', '/', $group);
-            $res['default_file'] = $this->app->get($group)['dir'] . '/src/config/' . $res['filename'] . '.php';
-            $res['config_file'] = $root . '/config/' . $group . '/' . $res['filename'] . '.php';
-            $res['key'] = $res['filename'] . '@' . $group;
-        }
-
+        $res[] = array_shift($paths);
+        $res[] = str_replace('.', '/', $group);
+        $res[] = $paths;
         return $res;
     }
 

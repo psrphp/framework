@@ -5,22 +5,18 @@ declare(strict_types=1);
 namespace PsrPHP\Framework;
 
 use Exception;
-use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-class Handler implements RequestHandlerInterface
+class RequestHandler implements RequestHandlerInterface
 {
-    private $container;
-    private $handler;
     private $middlewares = [];
 
-    public function __construct(
-        ContainerInterface $container
-    ) {
-        $this->container = $container;
+    public function __construct()
+    {
+        Framework::getEvent()->dispatch($this);
     }
 
     public function pushMiddleware(...$middlewares)
@@ -53,23 +49,22 @@ class Handler implements RequestHandlerInterface
         return array_shift($this->middlewares);
     }
 
-    public function run(
-        RequestHandlerInterface $handler,
-        ServerRequestInterface $request
-    ) {
-        $this->handler = $handler;
-        return $this->handle($request);
-    }
-
-    public function handle(ServerRequestInterface $request): ResponseInterface
+    public function handle(ServerRequestInterface $serverRequest): ResponseInterface
     {
         if ($middleware = $this->shiftMiddleware()) {
             if (is_string($middleware)) {
-                $middleware = $this->container->get($middleware);
+                $middleware = Framework::getContainer()->get($middleware);
             }
-            return $middleware->process($request, $this);
+            return $middleware->process($serverRequest, $this);
         } else {
-            return $this->handler->handle($request);
+            if (!Framework::getRoute()->isFound()) {
+                return Framework::getHttpFactory()->createResponse(404);
+            } else if (!Framework::getRoute()->isAllowed()) {
+                return Framework::getHttpFactory()->createResponse(405);
+            } else {
+                $handler = Framework::getContainer()->get(Framework::getRoute()->getHandler());
+                return $handler->handle($serverRequest);
+            }
         }
     }
 }

@@ -4,30 +4,26 @@ declare(strict_types=1);
 
 namespace PsrPHP\Framework;
 
-use Composer\InstalledVersions;
 use GuzzleHttp\Psr7\ServerRequest;
 use PsrPHP\Psr11\Container;
 use PsrPHP\Psr14\Event;
 use PsrPHP\Psr16\NullAdapter;
 use PsrPHP\Psr17\Factory;
-use PsrPHP\Responser\Emitter;
 use PsrPHP\Router\Router;
-use PsrPHP\Template\Template;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\EventDispatcher\ListenerProviderInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
-use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
-use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\UploadedFileFactoryInterface;
 use Psr\Http\Message\UriFactoryInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
+use PsrPHP\Database\Db;
+use PsrPHP\Session\Session;
 
 class Framework
 {
@@ -39,22 +35,11 @@ class Framework
         }
         $run = true;
 
-        if (!class_exists(InstalledVersions::class)) {
-            die('composer 2 is required!');
-        }
-
         self::execute(function (
-            App $app,
             Event $event,
-            Container $container,
+            ListenerProvider $listenerProvider,
         ) {
-            foreach ($app->all() as $vo) {
-                $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($vo['name'], '/-')) . '\\Psrphp\\ListenerProvider';
-                if (class_exists($cls) && is_subclass_of($cls, ListenerProviderInterface::class)) {
-                    $event->addProvider($container->get($cls));
-                }
-            }
-            $event->dispatch($app);
+            $event->addProvider($listenerProvider);
         });
 
         self::execute(function (
@@ -72,42 +57,12 @@ class Framework
         });
 
         self::execute(function (
-            Event $event,
-            Route $route
+            RequestHandler $requestHandler,
+            ResponseEmitter $responseEmitter,
         ) {
-            $event->dispatch($route);
-        });
-
-        self::execute(function (
-            Event $event,
-            Route $route,
-            Handler $handler,
-        ) {
-            $handler->pushMiddleware(...$route->getMiddleWares());
-            $event->dispatch($handler);
-        });
-
-        self::execute(function (
-            Route $route,
-            Event $event,
-            Emitter $emitter,
-            Handler $handler,
-            ServerRequestInterface $serverRequest,
-            ResponseFactoryInterface $responseFactory,
-        ) {
-            if (!$route->isFound()) {
-                $requestHandler = self::makeRequestHandler($responseFactory->createResponse(404));
-            } else if (!$route->isAllowed()) {
-                $requestHandler = self::makeRequestHandler($responseFactory->createResponse(405));
-            } else {
-                $requestHandler = self::getContainer()->get($route->getHandler());
-            }
-            $event->dispatch($requestHandler);
-
-            $response = $handler->run($requestHandler, $serverRequest);
-            $event->dispatch($response);
-
-            $emitter->emit($response);
+            $serverRequest = self::getServerRequest();
+            $response = $requestHandler->handle($serverRequest);
+            $responseEmitter->emit($response);
         });
     }
 
@@ -115,6 +70,117 @@ class Framework
     {
         $args = self::getContainer()->reflectArguments($callable, $params);
         return call_user_func($callable, ...$args);
+    }
+
+    public static function getServerRequest(): ServerRequest
+    {
+        return ServerRequest::fromGlobals()->withQueryParams(array_merge($_GET, self::getRoute()->getParams()));
+    }
+
+    public static function getDb(): Db
+    {
+        return self::getContainer()->get(Db::class);
+    }
+
+    public static function getTemplate(): Template
+    {
+        return self::getContainer()->get(Template::class);
+    }
+
+    public static function getRouter(): Router
+    {
+        return self::getContainer()->get(Router::class);
+    }
+
+    public static function getRoute(): Route
+    {
+        return self::getContainer()->get(Route::class);
+    }
+
+    public static function getEvent(): Event
+    {
+        return self::getContainer()->get(Event::class);
+    }
+
+    public static function getCache(): CacheInterface
+    {
+        return self::getContainer()->get(CacheInterface::class);
+    }
+
+    public static function getLogger(): LoggerInterface
+    {
+        return self::getContainer()->get(LoggerInterface::class);
+    }
+
+    public static function getHttpFactory(): Factory
+    {
+        return self::getContainer()->get(Factory::class);
+    }
+
+    public static function getSession(): Session
+    {
+        return self::getContainer()->get(Session::class);
+    }
+
+    public static function getConfig(): Config
+    {
+        return self::getContainer()->get(Config::class);
+    }
+
+    public static function getRequest(): Request
+    {
+        return self::getContainer()->get(Request::class);
+    }
+
+    public static function getAppList(): array
+    {
+        static $apps;
+        if (is_null($apps)) {
+            $root = dirname(__DIR__, 4);
+            if (file_exists($root . '/vendor/composer/installed.json')) {
+                foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
+                    if ($pkg['type'] != 'psrapp') {
+                        continue;
+                    }
+                    if (file_exists($root . '/config/' . $pkg['name'] . '/disabled.lock')) {
+                        continue;
+                    }
+                    $apps[$pkg['name']] = $root . '/vendor/' . $pkg['name'];
+                }
+            }
+
+            spl_autoload_register(function (string $class) use ($root) {
+                $paths = explode('\\', $class);
+                if (isset($paths[3]) && $paths[0] == 'App' && $paths[1] == 'Plugin') {
+                    $file = $root . '/plugin/'
+                        . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
+                        . '/src/library/'
+                        . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3))
+                        . '.php';
+                    if (file_exists($file)) {
+                        include $file;
+                    }
+                }
+            });
+
+            foreach (scandir($root . '/plugin') as $vo) {
+                if (in_array($vo, array('.', '..'))) {
+                    continue;
+                }
+                if (!is_dir($root . '/plugin' . DIRECTORY_SEPARATOR . $vo)) {
+                    continue;
+                }
+                $appname = 'plugin/' . $vo;
+                if (file_exists($root . '/config/' . $appname . '/disabled.lock')) {
+                    continue;
+                }
+                if (!file_exists($root . '/config/' . $appname . '/install.lock')) {
+                    continue;
+                }
+                $apps[$appname] = $root . '/' . $appname;
+            }
+        }
+        return $apps;
     }
 
     public static function getContainer(): Container
@@ -140,42 +206,8 @@ class Framework
                     return is_string($obj) ? $container->get($obj) : $obj;
                 });
             }
-
-            $container->set(Template::class, function (
-                App $app,
-                Template $template
-            ): Template {
-                foreach ($app->all() as $vo) {
-                    $template->addPath($vo['name'], $vo['dir'] . '/src/template');
-                }
-                return $template;
-            });
-
-            $container->set(ServerRequestInterface::class, function (
-                Route $route
-            ): ServerRequestInterface {
-                $request = ServerRequest::fromGlobals();
-                return $request->withQueryParams(array_merge($request->getQueryParams(), $route->getParams()));
-            });
         }
 
         return $container;
-    }
-
-    private static function makeRequestHandler(ResponseInterface $response): RequestHandlerInterface
-    {
-        return new class($response) implements RequestHandlerInterface
-        {
-            private $response;
-            public function __construct(ResponseInterface $response)
-            {
-                $this->response = $response;
-            }
-
-            public function handle(ServerRequestInterface $request): ResponseInterface
-            {
-                return $this->response;
-            }
-        };
     }
 }

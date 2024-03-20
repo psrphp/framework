@@ -6,28 +6,23 @@ namespace PsrPHP\Framework;
 
 use GuzzleHttp\Psr7\ServerRequest;
 use Psr\Http\Server\RequestHandlerInterface;
-use PsrPHP\Router\Router;
 
 class Route
 {
     private $found = false;
     private $allowed = false;
     private $handler = '';
-    private $middlewares = [];
     private $params = [];
 
-    public function __construct(
-        Router $router,
-        App $app
-    ) {
+    public function __construct()
+    {
         $uri = ServerRequest::getUriFromGlobals();
-        $res = $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', '' . $uri->withQuery(''));
+        $res = Framework::getRouter()->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', '' . $uri->withQuery(''));
 
         $this->setFound($res[0]);
         $this->setAllowed($res[1] ?? false);
         $this->setHandler($res[2] ?? '');
-        $this->setMiddlewares($res[3] ?? []);
-        $this->setParams($res[4] ?? []);
+        $this->setParams($res[3] ?? []);
 
         if (!$this->isFound()) {
             $paths = explode('/', $uri->getPath());
@@ -62,33 +57,30 @@ class Route
                 return strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($str)));
             };
             $appname = $camelToLine($paths[1]) . '/' . $camelToLine($paths[2]);
-            if (!$app->has($appname)) {
+            if (!array_key_exists($appname, Framework::getAppList())) {
                 $this->setFound(false);
             }
         }
+
+        Framework::getEvent()->dispatch($this);
     }
 
-    public function setFound(bool $found)
+    private function setFound(bool $found)
     {
         $this->found = $found;
     }
 
-    public function setAllowed(bool $allowed)
+    private function setAllowed(bool $allowed)
     {
         $this->allowed = $allowed;
     }
 
-    public function setHandler(string $handler)
+    private function setHandler(string $handler)
     {
         $this->handler = $handler;
     }
 
-    public function setMiddlewares(array $middlewares)
-    {
-        $this->middlewares = $middlewares;
-    }
-
-    public function setParams(array $params)
+    private function setParams(array $params)
     {
         $this->params = $params;
     }
@@ -106,11 +98,6 @@ class Route
     public function getHandler(): string
     {
         return $this->handler;
-    }
-
-    public function getMiddleWares(): array
-    {
-        return $this->middlewares;
     }
 
     public function getParams(): array

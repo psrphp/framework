@@ -21,9 +21,8 @@ class Script
          */
         $operation = $event->getOperation();
         $package_name = $operation->getPackage()->getName();
-        $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
-        if (class_exists($cls) && is_callable([$cls, 'onInstall'])) {
-            self::exec([$cls, 'onInstall'], [
+        if ($callable = self::getCallable($package_name, 'onInstall')) {
+            self::exec($callable, [
                 PackageEvent::class => $event,
             ]);
         }
@@ -36,9 +35,8 @@ class Script
          */
         $operation = $event->getOperation();
         $package_name = $operation->getPackage()->getName();
-        $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
-        if (class_exists($cls) && is_callable([$cls, 'onUnInstall'])) {
-            self::exec([$cls, 'onUnInstall'], [
+        if ($callable = self::getCallable($package_name, 'onUnInstall')) {
+            self::exec($callable, [
                 PackageEvent::class => $event,
             ]);
         }
@@ -51,9 +49,8 @@ class Script
          */
         $operation = $event->getOperation();
         $package_name = $operation->getTargetPackage()->getName();
-        $cls = 'App\\' . str_replace(['-', '/'], ['', '\\'], ucwords($package_name, '/-')) . '\\Psrphp\\Script';
-        if (class_exists($cls) && is_callable([$cls, 'onUpdate'])) {
-            self::exec([$cls, 'onUpdate'], [
+        if ($callable = self::getCallable($package_name, 'onUpdate')) {
+            self::exec($callable, [
                 PackageEvent::class => $event,
             ]);
         }
@@ -85,14 +82,26 @@ class Script
         }
     }
 
+    private static function getCallable(string $package_name, string $action): ?callable
+    {
+        $file = dirname(__DIR__, 3) . '/' . $package_name . '/src/config/package.php';
+        if (file_exists($file)) {
+            $cfg = self::requireFile($file);
+            if (isset($cfg[$action]) && is_callable($cfg[$action])) {
+                return $cfg[$action];
+            }
+        }
+        return null;
+    }
+
     public static function execSql(string $sql)
     {
         $sqls = array_filter(explode(";" . PHP_EOL, $sql));
 
         $prefix = 'prefix_';
-        $root = dirname(dirname(dirname(dirname(__DIR__))));
+        $root = dirname(__DIR__, 4);
         $cfg_file = $root . '/config/database.php';
-        $cfg = (array)include $cfg_file;
+        $cfg = self::requireFile($cfg_file);
         if (isset($cfg['master']['prefix'])) {
             $prefix = $cfg['master']['prefix'];
         }
@@ -108,5 +117,20 @@ class Script
         foreach ($sqls as $sql) {
             $pdo->exec(str_replace('prefix_', $prefix, $sql . ';'));
         }
+    }
+
+    private static function requireFile(string $file)
+    {
+        static $loader;
+        if (!$loader) {
+            $loader = new class()
+            {
+                public function load(string $file)
+                {
+                    return require $file;
+                }
+            };
+        }
+        return $loader->load($file);
     }
 }
