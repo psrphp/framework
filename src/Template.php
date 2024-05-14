@@ -19,15 +19,15 @@ class Template
 
     public function __construct()
     {
-        foreach (Framework::getAppList() as $appname => $appdir) {
-            $this->addPath($appname, $appdir . '/src/template');
+        foreach (App::getList() as $appname) {
+            $this->addPath($appname, App::getDir($appname) . '/src/template');
         }
         $this->assign([
             'db' => Framework::getDb(),
             'cache' => Framework::getCache(),
             'logger' => Framework::getLogger(),
             'router' => Framework::getRouter(),
-            'config' => Framework::getConfig(),
+            'config' => new Config,
             'session' => Framework::getSession(),
             'request' => Framework::getRequest(),
             'template' => $this,

@@ -6,41 +6,41 @@ namespace PsrPHP\Framework;
 
 class Request
 {
-    public function has(string $field): bool
+    public static function has(string $field): bool
     {
-        $fields = $this->fieldFilter($field);
+        $fields = self::fieldFilter($field);
         $type = array_shift($fields);
         switch ($type) {
             case 'server':
-                return $this->isSetValue(Framework::getServerRequest()->getServerParams(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getServerParams(), $fields);
                 break;
 
             case 'get':
-                return $this->isSetValue(Framework::getServerRequest()->getQueryParams(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getQueryParams(), $fields);
                 break;
 
             case 'post':
-                return $this->isSetValue(Framework::getServerRequest()->getParsedBody(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getParsedBody(), $fields);
                 break;
 
             case 'request':
-                return $this->isSetValue(Framework::getServerRequest()->getQueryParams(), $fields) || $this->isSetValue(Framework::getServerRequest()->getParsedBody(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getQueryParams(), $fields) || self::isSetValue(Framework::getServerRequest()->getParsedBody(), $fields);
                 break;
 
             case 'cookie':
-                return $this->isSetValue(Framework::getServerRequest()->getCookieParams(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getCookieParams(), $fields);
                 break;
 
             case 'file':
-                return $this->isSetValue(Framework::getServerRequest()->getUploadedFiles(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getUploadedFiles(), $fields);
                 break;
 
             case 'attr':
-                return $this->isSetValue(Framework::getServerRequest()->getAttributes(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getAttributes(), $fields);
                 break;
 
             case 'header':
-                return $this->isSetValue(Framework::getServerRequest()->getHeaders(), $fields);
+                return self::isSetValue(Framework::getServerRequest()->getHeaders(), $fields);
                 break;
 
             default:
@@ -49,51 +49,51 @@ class Request
         }
     }
 
-    public function server(string $field = '', $default = null)
+    public static function server(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getServerParams(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getServerParams(), self::fieldFilter($field), $default);
     }
 
-    public function get(string $field = '', $default = null)
+    public static function get(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getQueryParams(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getQueryParams(), self::fieldFilter($field), $default);
     }
 
-    public function post(string $field = '', $default = null)
+    public static function post(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getParsedBody(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getParsedBody(), self::fieldFilter($field), $default);
     }
 
-    public function request(string $field = '', $default = null)
+    public static function request(string $field = '', $default = null)
     {
-        if ($this->has('get.' . $field)) {
-            return $this->getValue(Framework::getServerRequest()->getQueryParams(), $this->fieldFilter($field), $default);
+        if (self::has('get.' . $field)) {
+            return self::getValue(Framework::getServerRequest()->getQueryParams(), self::fieldFilter($field), $default);
         } else {
-            return $this->getValue(Framework::getServerRequest()->getParsedBody(), $this->fieldFilter($field), $default);
+            return self::getValue(Framework::getServerRequest()->getParsedBody(), self::fieldFilter($field), $default);
         }
     }
 
-    public function cookie(string $field = '', $default = null)
+    public static function cookie(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getCookieParams(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getCookieParams(), self::fieldFilter($field), $default);
     }
 
-    public function file(string $field = '', $default = null)
+    public static function file(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getUploadedFiles(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getUploadedFiles(), self::fieldFilter($field), $default);
     }
 
-    public function attr(string $field = '', $default = null)
+    public static function attr(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getAttributes(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getAttributes(), self::fieldFilter($field), $default);
     }
 
-    public function header(string $field = '', $default = null)
+    public static function header(string $field = '', $default = null)
     {
-        return $this->getValue(Framework::getServerRequest()->getHeaders(), $this->fieldFilter($field), $default);
+        return self::getValue(Framework::getServerRequest()->getHeaders(), self::fieldFilter($field), $default);
     }
 
-    private function isSetValue(array $data = [], array $arr = []): bool
+    private static function isSetValue(array $data = [], array $arr = []): bool
     {
         $key = array_shift($arr);
         if (!$arr) {
@@ -102,10 +102,10 @@ class Request
         if (!isset($data[$key])) {
             return false;
         }
-        return $this->isSetValue($data[$key], $arr);
+        return self::isSetValue($data[$key], $arr);
     }
 
-    private function getValue($data = [], array $arr = [], $default = null)
+    private static function getValue($data = [], array $arr = [], $default = null)
     {
         if (!$arr) {
             return $data;
@@ -120,10 +120,10 @@ class Request
         if (!isset($data[$key])) {
             return $default;
         }
-        return $this->getValue($data[$key], $arr, $default);
+        return self::getValue($data[$key], $arr, $default);
     }
 
-    private function fieldFilter(string $field): array
+    private static function fieldFilter(string $field): array
     {
         return array_filter(
             explode('.', $field),

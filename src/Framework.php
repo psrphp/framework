@@ -35,35 +35,14 @@ class Framework
         }
         $run = true;
 
-        self::execute(function (
-            Event $event,
-            ListenerProvider $listenerProvider,
-        ) {
-            $event->addProvider($listenerProvider);
-        });
+        self::getEvent()->addProvider(new Provider);
 
-        self::execute(function (
-            Event $event,
-            Container $container
-        ) {
-            $event->dispatch($container);
-        });
+        self::getEvent()->dispatch(self::getContainer());
 
-        self::execute(function (
-            Event $event,
-            Router $router
-        ) {
-            $event->dispatch($router);
-        });
+        self::getEvent()->dispatch(self::getRouter());
 
-        self::execute(function (
-            RequestHandler $requestHandler,
-            ResponseEmitter $responseEmitter,
-        ) {
-            $serverRequest = self::getServerRequest();
-            $response = $requestHandler->handle($serverRequest);
-            $responseEmitter->emit($response);
-        });
+        $response = (new Handler)->handle(self::getServerRequest());
+        (new Emitter)->emit($response);
     }
 
     public static function execute(callable $callable, array $params = [])
@@ -74,7 +53,11 @@ class Framework
 
     public static function getServerRequest(): ServerRequest
     {
-        return ServerRequest::fromGlobals()->withQueryParams(array_merge($_GET, self::getRoute()->getParams()));
+        static $serverRequest;
+        if (is_null($serverRequest)) {
+            $serverRequest = ServerRequest::fromGlobals()->withQueryParams(array_merge($_GET, Route::getParams()));
+        }
+        return $serverRequest;
     }
 
     public static function getDb(): Db
@@ -90,11 +73,6 @@ class Framework
     public static function getRouter(): Router
     {
         return self::getContainer()->get(Router::class);
-    }
-
-    public static function getRoute(): Route
-    {
-        return self::getContainer()->get(Route::class);
     }
 
     public static function getEvent(): Event
@@ -122,65 +100,9 @@ class Framework
         return self::getContainer()->get(Session::class);
     }
 
-    public static function getConfig(): Config
-    {
-        return self::getContainer()->get(Config::class);
-    }
-
     public static function getRequest(): Request
     {
         return self::getContainer()->get(Request::class);
-    }
-
-    public static function getAppList(): array
-    {
-        static $apps;
-        if (is_null($apps)) {
-            $root = dirname(__DIR__, 4);
-            if (file_exists($root . '/vendor/composer/installed.json')) {
-                foreach (json_decode(file_get_contents($root . '/vendor/composer/installed.json'), true)['packages'] as $pkg) {
-                    if ($pkg['type'] != 'psrapp') {
-                        continue;
-                    }
-                    if (file_exists($root . '/config/' . $pkg['name'] . '/disabled.lock')) {
-                        continue;
-                    }
-                    $apps[$pkg['name']] = $root . '/vendor/' . $pkg['name'];
-                }
-            }
-
-            spl_autoload_register(function (string $class) use ($root) {
-                $paths = explode('\\', $class);
-                if (isset($paths[3]) && $paths[0] == 'App' && $paths[1] == 'Plugin') {
-                    $file = $root . '/plugin/'
-                        . strtolower(preg_replace('/([A-Z])/', "-$1", lcfirst($paths[2])))
-                        . '/src/library/'
-                        . str_replace('\\', '/', substr($class, strlen($paths[0]) + strlen($paths[1]) + strlen($paths[2]) + 3))
-                        . '.php';
-                    if (file_exists($file)) {
-                        include $file;
-                    }
-                }
-            });
-
-            foreach (scandir($root . '/plugin') as $vo) {
-                if (in_array($vo, array('.', '..'))) {
-                    continue;
-                }
-                if (!is_dir($root . '/plugin' . DIRECTORY_SEPARATOR . $vo)) {
-                    continue;
-                }
-                $appname = 'plugin/' . $vo;
-                if (file_exists($root . '/config/' . $appname . '/disabled.lock')) {
-                    continue;
-                }
-                if (!file_exists($root . '/config/' . $appname . '/install.lock')) {
-                    continue;
-                }
-                $apps[$appname] = $root . '/' . $appname;
-            }
-        }
-        return $apps;
     }
 
     public static function getContainer(): Container

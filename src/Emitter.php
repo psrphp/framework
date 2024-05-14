@@ -6,7 +6,7 @@ namespace PsrPHP\Framework;
 
 use Psr\Http\Message\ResponseInterface;
 
-class ResponseEmitter
+class Emitter
 {
     private $chunkSize = 4096;
 
